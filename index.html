@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Sanxing English Village - AR Shopping</title>
+    
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        /* --- GLOBAL VARIABLES --- */
+        :root {
+            --primary: #007AFF; --success: #34C759; --danger: #FF3B30;
+            --text-dark: #1D1D1F; --glass-bg: rgba(255, 255, 255, 0.75);
+            --glass-border: rgba(255, 255, 255, 0.3); --shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+        body { background-color: #000; color: var(--text-dark); height: 100vh; overflow: hidden; background-size: cover; background-position: center; transition: background-image 0.5s ease, font-family 0.3s; }
+
+        .glass-panel { background: var(--glass-bg); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--glass-border); border-radius: 24px; box-shadow: var(--shadow); padding: 30px; }
+
+        /* --- SCREENS --- */
+        .screen { display: none; height: 100vh; width: 100vw; flex-direction: column; align-items: center; justify-content: center; padding: 20px; text-align: center; overflow-y: auto; z-index: 10; position: relative; }
+        .screen.active { display: flex; }
+
+        .btn { background: rgba(255,255,255,0.9); color: var(--text-dark); border: none; padding: 16px 32px; font-size: 1.2rem; font-weight: 600; border-radius: 100px; cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.1); transition: all 0.2s; margin: 10px; display: inline-flex; align-items: center; gap: 10px; }
+        .btn:active { transform: scale(0.96); }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-success { background: var(--success); color: white; }
+        .btn-danger { background: var(--danger); color: white; }
+        
+        h1 { font-size: 3rem; font-weight: 700; letter-spacing: -1px; margin-bottom: 10px; }
+        h2 { font-size: 1.5rem; font-weight: 400; color: #555; margin-bottom: 30px; }
+        .text-white { color: white; text-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+
+        .app-header { position: absolute; top: 20px; width: calc(100% - 40px); max-width: 900px; display: flex; justify-content: space-between; align-items: center; z-index: 50; padding: 15px 25px; }
+        .stat-badge { font-size: 1.2rem; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+        .grid-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; width: 100%; max-width: 900px; margin-top: 60px; }
+        
+        .group-header { width: 100%; grid-column: 1 / -1; text-align: left; margin-top: 20px; border-bottom: 2px solid rgba(255,255,255,0.5); padding-bottom: 10px; font-size: 1.8rem; font-weight: bold; color: white; text-shadow: 0 2px 5px rgba(0,0,0,0.5); }
+        .item-card { background: rgba(255,255,255,0.8); backdrop-filter: blur(10px); border-radius: 20px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); border: 1px solid rgba(255,255,255,0.5); cursor: pointer; transition: all 0.2s; position: relative; text-align: center; }
+        .item-card.selected { border: 2px solid var(--primary); background: rgba(0, 122, 255, 0.05); }
+        .item-image { width: 100%; height: 120px; object-fit: contain; margin-bottom: 15px; border-radius: 10px; background: rgba(0,0,0,0.02); }
+        .check-badge { position: absolute; top: 10px; right: 10px; background: var(--primary); color: white; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s; }
+        .item-card.selected .check-badge { opacity: 1; }
+
+        .scanner-container { position: relative; width: 100%; max-width: 500px; border-radius: 30px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.3); background: #000; margin-bottom: 30px;}
+        #reader { width: 100%; }
+        #reader__dashboard_section_csr, #reader__dashboard_section_swaplink { display: none !important; }
+        .scanner-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; box-shadow: inset 0 0 0 500px rgba(0,0,0,0.5); z-index: 10; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+        .scanner-viewfinder { width: 250px; height: 250px; position: relative; border: 4px solid var(--success); border-radius: 20px; }
+        .laser { width: 100%; height: 2px; background: var(--success); position: absolute; top: 50%; left: 0; box-shadow: 0 0 10px var(--success); animation: scan 2s infinite linear; }
+        @keyframes scan { 0% { top: 0; opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { top: 100%; opacity: 0; } }
+
+        /* --- CMS DASHBOARD UI --- */
+        #settings-btn { position: fixed; bottom: 20px; right: 20px; background: rgba(0,0,0,0.5); color: white; width: 50px; height: 50px; border-radius: 25px; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 100; backdrop-filter: blur(5px); border: none; }
+        #settings-modal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #f4f5f7; z-index: 200; font-family: -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; user-select: text; }
+        .dashboard-header { background: white; padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e1e4e8; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        .dashboard-header h1 { font-size: 1.5rem; color: #1a1a1a; margin: 0; }
+        .dashboard-layout { display: flex; height: calc(100vh - 65px); }
+        
+        .dash-sidebar { width: 260px; background: white; border-right: 1px solid #e1e4e8; overflow-y: auto; padding: 20px 0; }
+        .dash-tab { padding: 15px 25px; cursor: pointer; font-size: 1.05rem; color: #586069; border-left: 4px solid transparent; transition: all 0.2s; display: flex; align-items: center; gap: 10px; }
+        .dash-tab.active { background: #e6f2ff; color: #007AFF; border-left-color: #007AFF; font-weight: 600; }
+        
+        .dash-content { flex-grow: 1; padding: 30px; overflow-y: auto; background: #f4f5f7; }
+        .dash-section { display: none; max-width: 900px; margin: 0 auto; padding-bottom: 50px;}
+        .dash-section.active { display: block; }
+        
+        .dash-card { background: white; border-radius: 12px; padding: 25px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); margin-bottom: 25px; }
+        .dash-card h2 { font-size: 1.2rem; margin-bottom: 20px; color: #24292e; border-bottom: 1px solid #eaecef; padding-bottom: 10px; }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; font-weight: 600; margin-bottom: 8px; color: #24292e; font-size: 0.95rem; }
+        .dash-input, .dash-select { width: 100%; padding: 10px 12px; border: 1px solid #d1d5da; border-radius: 6px; font-size: 1rem; background: #fafbfc; transition: border 0.2s; }
+        .dash-input:focus { border-color: #007AFF; outline: none; background: white; }
+        .dash-row { display: flex; gap: 15px; align-items: flex-start;}
+        .dash-row > * { flex: 1; }
+
+        /* Dynamic Editors */
+        .editor-box { border: 1px solid #e1e4e8; padding: 15px; border-radius: 8px; background: #fdfdfd; margin-bottom: 15px; position: relative; }
+        .btn-small { padding: 6px 12px; font-size: 0.9rem; border-radius: 6px; cursor: pointer; border: none; font-weight: 600; }
+        .btn-remove { background: #ffeef0; color: #cb2431; position: absolute; top: 15px; right: 15px; }
+        .btn-add { background: #e6f2ff; color: #007AFF; border: 1px dashed #007AFF; width: 100%; padding: 10px; text-align: center; border-radius: 6px; cursor: pointer; font-weight: 600; margin-top: 10px;}
+        .group-container { border: 2px solid #e1e4e8; border-radius: 8px; padding: 15px; margin-bottom: 20px; background: white; }
+    </style>
+</head>
+<body>
+
+    <audio id="beep-sound" src="https://www.soundjay.com/buttons/sounds/beep-07a.mp3" preload="auto"></audio>
+    <button id="settings-btn" onclick="promptPassword()"><i class="fas fa-cog"></i></button>
+
+    <div class="app-header glass-panel" style="display: none;" id="global-header">
+        <div class="stat-badge"><i class="fas fa-wallet" style="color:var(--primary)"></i> $<span id="ui-wallet">0.00</span></div>
+        <div class="stat-badge"><i class="fas fa-shopping-cart"></i> $<span id="ui-cart">0.00</span></div>
+    </div>
+
+    <div id="screen-home" class="screen active text-white">
+        <div class="glass-panel" style="background: rgba(0,0,0,0.4); border:none;">
+            <h1 id="ui-title">Sanxing Mall</h1>
+            <h2 id="ui-subtitle">Interactive English AR Shopping</h2>
+            <button class="btn btn-primary" onclick="startApp()">Start Experience <i class="fas fa-arrow-right"></i></button>
+        </div>
+    </div>
+
+    <div id="screen-quiz" class="screen">
+        <div class="glass-panel" style="max-width: 600px; width: 100%;">
+            <h2 style="color:var(--primary); margin-bottom: 5px;">Earn Your Budget</h2>
+            <div id="quiz-container">
+                <h1 id="quiz-question" style="font-size: 1.8rem; margin-bottom: 30px;">Loading...</h1>
+                <div id="quiz-options" style="display: flex; flex-direction: column; gap: 10px;"></div>
+            </div>
+            <button id="btn-to-mall" class="btn btn-success" style="display: none; margin-top: 20px; width: 100%; justify-content: center;" onclick="goToMall()">Enter Mall <i class="fas fa-shopping-bag"></i></button>
+        </div>
+    </div>
+
+    <div id="screen-mall" class="screen">
+        <h1 class="text-white" style="margin-top: 60px;">Select a Department</h1>
+        <div class="grid-container" id="shop-categories"></div>
+        <button id="btn-checkout" class="btn btn-success" style="position: fixed; bottom: 40px; display: none;" onclick="goToScanner()">Proceed to Payment <i class="fas fa-qrcode"></i></button>
+    </div>
+
+    <div id="screen-store" class="screen">
+        <button class="btn" style="position: absolute; top: 90px; left: 20px; padding: 10px 20px; font-size: 1rem;" onclick="showScreen('screen-mall')"><i class="fas fa-chevron-left"></i> Back</button>
+        <h1 class="text-white" id="store-title" style="margin-top: 80px;">Store</h1>
+        <div class="grid-container" id="store-inventory" style="margin-top: 20px;"></div>
+    </div>
+
+    <div id="screen-scanner" class="screen">
+        <h1 class="text-white" style="margin-top: 40px; font-size: 2rem;">Scan Physical Items</h1>
+        <div class="scanner-container">
+            <div id="reader"></div>
+            <div class="scanner-overlay"><div class="scanner-viewfinder"><div class="laser"></div></div></div>
+        </div>
+        <div id="checklist" style="width: 100%; max-width: 500px; margin-bottom: 80px; text-align:left;"></div>
+        <button id="btn-go-cashier" class="btn btn-primary" style="position: fixed; bottom: 40px; display: none;" onclick="goToCashier()">Go to Cashier <i class="fas fa-credit-card"></i></button>
+    </div>
+
+    <div id="screen-cashier" class="screen">
+        <h1 class="text-white" style="font-size: 2rem; margin-top: 40px;">Final Payment</h1>
+        <p class="text-white" style="margin-bottom: 20px;">Scan the Teacher's Cashier QR Code.</p>
+        <div class="scanner-container" id="cashier-scanner-ui">
+            <div id="cashier-reader"></div>
+            <div class="scanner-overlay"><div class="scanner-viewfinder"><div class="laser"></div></div></div>
+        </div>
+        <div id="success-message" class="glass-panel" style="display: none; background: rgba(255,255,255,0.95);">
+            <i class="fas fa-check-circle" style="font-size: 5rem; color: var(--success); margin-bottom: 20px;"></i>
+            <h1 style="color: var(--text-dark);">Payment Successful</h1>
+            <h2 style="color: var(--primary);">Budget Remaining: $<span id="money-saved"></span></h2>
+            <button class="btn btn-primary" onclick="location.reload()">Start New Session</button>
+        </div>
+    </div>
+
+
+    <div id="settings-modal">
+        <div class="dashboard-header">
+            <h1><i class="fas fa-edit" style="color: #007AFF;"></i> EV Admin Dashboard</h1>
+            <div style="display: flex; gap: 10px;">
+                <button class="btn btn-primary" onclick="exportJSON()" style="padding: 8px 16px; font-size: 0.9rem; margin:0;"><i class="fas fa-download"></i> Export App File</button>
+                <button class="btn" onclick="closeSettings()" style="background: #e1e4e8; padding: 8px 16px; font-size: 0.9rem; margin:0;">Save & Close</button>
+            </div>
+        </div>
+
+        <div class="dashboard-layout">
+            <div class="dash-sidebar">
+                <div class="dash-tab active" onclick="switchDashTab('tab-general')">1. General & Home</div>
+                <div class="dash-tab" onclick="switchDashTab('tab-assessment')">2. Assessment (Quiz)</div>
+                <div class="dash-tab" onclick="switchDashTab('tab-mall')">3. Mall Hub Page</div>
+                <div class="dash-tab" onclick="switchDashTab('tab-grocery')">4. Grocery Store</div>
+                <div class="dash-tab" onclick="switchDashTab('tab-clothes')">5. Clothes Store</div>
+                <div class="dash-tab" onclick="switchDashTab('tab-souvenirs')">6. Souvenirs Store</div>
+                <div class="dash-tab" onclick="switchDashTab('tab-payment')">7. Payment QR</div>
+            </div>
+
+            <div class="dash-content">
+                
+                <div id="tab-general" class="dash-section active">
+                    <div class="dash-card" style="background:#e6f2ff; border:1px solid #b3d4ff;">
+                        <h2>Load Previous Setup</h2>
+                        <input type="file" accept=".json" onchange="importJSON(event)">
+                        <p style="font-size: 0.85rem; color: #555; margin-top: 5px;">Upload a previously exported shopping.json file to continue editing.</p>
+                    </div>
+                    <div class="dash-card">
+                        <h2>General Settings</h2>
+                        <div class="dash-row">
+                            <div class="form-group"><label>App Title</label><input type="text" class="dash-input" id="inp-title" onchange="appData.appInfo.title = this.value"></div>
+                            <div class="form-group"><label>App Subtitle</label><input type="text" class="dash-input" id="inp-subtitle" onchange="appData.appInfo.subtitle = this.value"></div>
+                        </div>
+                        <div class="dash-row">
+                            <div class="form-group">
+                                <label>Font Style</label>
+                                <select class="dash-select" id="inp-font" onchange="appData.ui.fontFamily = this.value">
+                                    <optgroup label="Professional"><option value="'Helvetica Neue', sans-serif">Helvetica Neue</option><option value="'Roboto', sans-serif">Roboto</option></optgroup>
+                                    <optgroup label="Child-Friendly"><option value="'Comic Sans MS', cursive">Comic Sans MS</option><option value="'Chalkboard SE', sans-serif">Chalkboard SE</option></optgroup>
+                                </select>
+                            </div>
+                            <div class="form-group"><label>Font Size (px)</label><input type="number" class="dash-input" id="inp-size" onchange="appData.ui.fontSize = this.value"></div>
+                        </div>
+                        <div class="form-group"><label>Homepage Background (Image Link/URL)</label><input type="text" class="dash-input" id="inp-bg-home" onchange="appData.backgrounds.home = this.value"></div>
+                    </div>
+                </div>
+
+                <div id="tab-assessment" class="dash-section">
+                    <div class="dash-card">
+                        <h2>Assessment Rules</h2>
+                        <div class="form-group"><label>Background Image (URL)</label><input type="text" class="dash-input" id="inp-bg-quiz" onchange="appData.backgrounds.quiz = this.value"></div>
+                    </div>
+                    <div class="dash-card">
+                        <h2>Questions</h2>
+                        <div id="quiz-editor-list"></div>
+                        <div class="btn-add" onclick="addQuestion()">+ Add New Question</div>
+                    </div>
+                </div>
+
+                <div id="tab-mall" class="dash-section">
+                    <div class="dash-card">
+                        <h2>Mall Hub Configuration</h2>
+                        <div class="form-group"><label>Main Mall Background (Image URL)</label><input type="text" class="dash-input" id="inp-bg-mall" onchange="appData.backgrounds.mall = this.value"></div>
+                    </div>
+                </div>
+
+                <div id="tab-grocery" class="dash-section">
+                    <div class="dash-card">
+                        <h2>Grocery Store Setup</h2>
+                        <div class="form-group"><label>Grocery Background Image (URL)</label><input type="text" class="dash-input" id="inp-bg-grocery" onchange="appData.stores.grocery.background = this.value"></div>
+                    </div>
+                    <div class="dash-card">
+                        <h2>Grocery Items & Categories</h2>
+                        <div id="grocery-editor-list"></div>
+                        <div class="btn-add" onclick="addGroup('grocery')">+ Add New Category</div>
+                    </div>
+                </div>
+
+                <div id="tab-clothes" class="dash-section">
+                    <div class="dash-card">
+                        <h2>Clothes Store Setup</h2>
+                        <div class="form-group"><label>Clothes Background Image (URL)</label><input type="text" class="dash-input" id="inp-bg-clothes" onchange="appData.stores.clothes.background = this.value"></div>
+                    </div>
+                    <div class="dash-card">
+                        <h2>Clothing Items & Categories</h2>
+                        <div id="clothes-editor-list"></div>
+                        <div class="btn-add" onclick="addGroup('clothes')">+ Add New Category</div>
+                    </div>
+                </div>
+
+                <div id="tab-souvenirs" class="dash-section">
+                    <div class="dash-card">
+                        <h2>Souvenirs Store Setup</h2>
+                        <div class="form-group"><label>Souvenirs Background Image (URL)</label><input type="text" class="dash-input" id="inp-bg-souvenirs" onchange="appData.stores.souvenirs.background = this.value"></div>
+                    </div>
+                    <div class="dash-card">
+                        <h2>Souvenir Items & Categories</h2>
+                        <div id="souvenirs-editor-list"></div>
+                        <div class="btn-add" onclick="addGroup('souvenirs')">+ Add New Category</div>
+                    </div>
+                </div>
+
+                <div id="tab-payment" class="dash-section">
+                    <div class="dash-card">
+                        <h2>Payment Cashier Settings</h2>
+                        <div class="form-group">
+                            <label>Cashier QR Code Text</label>
+                            <input type="text" class="dash-input" id="inp-cashier-qr" onchange="appData.appInfo.cashierQR = this.value">
+                            <p style="font-size:0.85rem; color:#666; margin-top:5px;">This is the exact text you must print on the Teacher's final QR code to complete the shopping trip.</p>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- DATA STRUCTURE ---
+        const defaultConfig = {
+            "appInfo": { "title": "Sanxing Mall", "subtitle": "English Village AR Shopping", "cashierQR": "PAY_SUCCESS" },
+            "ui": { "fontFamily": "'Helvetica Neue', sans-serif", "fontSize": "16" },
+            "backgrounds": { 
+                "home": "https://images.unsplash.com/photo-1519999482648-25049ddd37b1?q=80&w=2000",
+                "quiz": "https://images.unsplash.com/photo-1503676260728-1c00da094a0b?q=80&w=2000",
+                "mall": "https://images.unsplash.com/photo-1441986300917-64674bd600d8?q=80&w=2000"
+            },
+            "quiz": [ { "question": "If an apple is $5, how much are two?", "options": ["$5", "$10", "$15"], "correctIndex": 1, "reward": 50 } ],
+            "stores": {
+                "grocery": { "title": "Grocery Market", "icon": "fa-shopping-basket", "background": "", "groups": [{ "groupName": "Fruits", "items": [ { "id": "qr_apple", "name": "Apple", "price": 5, "image": "https://images.unsplash.com/photo-1560806887-1e4cd0b6faa6?w=300" } ] }] },
+                "clothes": { "title": "Boutique", "icon": "fa-tshirt", "background": "", "groups": [{ "groupName": "Tops", "items": [ { "id": "qr_shirt", "name": "T-Shirt", "price": 15, "image": "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=300" } ] }] },
+                "souvenirs": { "title": "Gift Shop", "icon": "fa-gift", "background": "", "groups": [{ "groupName": "Toys", "items": [ { "id": "qr_bear", "name": "Teddy Bear", "price": 12, "image": "https://images.unsplash.com/photo-1559454403-b8fb88521f11?w=300" } ] }] }
+            }
+        };
+
+        let appData = null;
+        let gameState = { wallet: 0, cart: {}, scannedItems: [], currentQuizIndex: 0 };
+        let html5QrcodeScanner = null; let cashierScanner = null;
+
+        // --- APP ENGINE ---
+        async function initApp() {
+            const localData = localStorage.getItem('shoppingConfig');
+            if (localData) { appData = JSON.parse(localData); } 
+            else { appData = defaultConfig; localStorage.setItem('shoppingConfig', JSON.stringify(appData)); }
+            applyConfig();
+        }
+
+        function applyConfig() {
+            document.getElementById('ui-title').innerText = appData.appInfo.title;
+            document.getElementById('ui-subtitle').innerText = appData.appInfo.subtitle;
+            document.body.style.fontFamily = appData.ui.fontFamily;
+            document.body.style.fontSize = appData.ui.fontSize + 'px';
+            setBackground('home');
+        }
+
+        function setBackground(type) { document.body.style.backgroundImage = `url('${appData.backgrounds[type]}')`; }
+
+        function showScreen(screenId, storeId = null) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(screenId).classList.add('active');
+            
+            if (screenId === 'screen-home') setBackground('home');
+            else if (screenId === 'screen-quiz') setBackground('quiz');
+            else if (screenId === 'screen-mall') setBackground('mall');
+            else if (screenId === 'screen-store' && storeId && appData.stores[storeId].background) {
+                document.body.style.backgroundImage = `url('${appData.stores[storeId].background}')`;
+            }
+
+            const header = document.getElementById('global-header');
+            if (['screen-mall', 'screen-store', 'screen-scanner'].includes(screenId)) { header.style.display = 'flex'; updateUI(); } 
+            else { header.style.display = 'none'; }
+        }
+
+        // --- QUIZ GAME ---
+        function startApp() { gameState.wallet = 0; gameState.currentQuizIndex = 0; showScreen('screen-quiz'); loadQuestion(); }
+        function loadQuestion() {
+            if (gameState.currentQuizIndex >= appData.quiz.length) {
+                document.getElementById('quiz-container').innerHTML = `<h1 style="color:var(--success)">Great Job!</h1><h2>Wallet: $${gameState.wallet}</h2>`;
+                document.getElementById('btn-to-mall').style.display = 'flex'; return;
+            }
+            const q = appData.quiz[gameState.currentQuizIndex];
+            document.getElementById('quiz-question').innerText = q.question;
+            const optsContainer = document.getElementById('quiz-options'); optsContainer.innerHTML = '';
+            q.options.forEach((opt, index) => {
+                const btn = document.createElement('button'); btn.className = 'btn'; btn.style.width = '100%'; btn.innerText = opt;
+                btn.onclick = () => {
+                    if (index === q.correctIndex) { gameState.wallet += q.reward; document.getElementById('beep-sound').play().catch(e=>{}); } 
+                    else alert("Incorrect. Let's move on.");
+                    gameState.currentQuizIndex++; loadQuestion();
+                };
+                optsContainer.appendChild(btn);
+            });
+        }
+
+        // --- MALL & SHOPPING ---
+        function goToMall() { renderMall(); showScreen('screen-mall'); }
+        function updateUI() {
+            let total = Object.values(gameState.cart).reduce((sum, item) => sum + item.price, 0);
+            document.getElementById('ui-wallet').innerText = gameState.wallet.toFixed(2);
+            document.getElementById('ui-cart').innerText = total.toFixed(2);
+            document.getElementById('btn-checkout').style.display = (Object.keys(gameState.cart).length === Object.keys(appData.stores).length) ? 'flex' : 'none';
+        }
+
+        function renderMall() {
+            const container = document.getElementById('shop-categories'); container.innerHTML = '';
+            for (let storeId in appData.stores) {
+                const store = appData.stores[storeId];
+                const hasItem = gameState.cart[storeId] ? '<i class="fas fa-check-circle" style="color:var(--success)"></i>' : '';
+                container.innerHTML += `<div class="glass-panel item-card" onclick="openStore('${storeId}')" style="padding: 30px 20px;"><i class="fas ${store.icon}" style="font-size: 3rem; color: var(--primary); margin-bottom: 15px;"></i><h2 style="margin:0; font-weight:600; color:var(--text-dark)">${store.title} ${hasItem}</h2></div>`;
+            }
+        }
+
+        function openStore(storeId) {
+            const store = appData.stores[storeId];
+            document.getElementById('store-title').innerText = store.title;
+            const container = document.getElementById('store-inventory'); container.innerHTML = '';
+            store.groups.forEach(group => {
+                container.innerHTML += `<div class="group-header">${group.groupName}</div>`;
+                group.items.forEach(item => {
+                    const isSelected = gameState.cart[storeId] && gameState.cart[storeId].id === item.id;
+                    container.innerHTML += `<div class="item-card ${isSelected ? 'selected' : ''}" onclick="toggleCart('${storeId}', '${item.id}')"><div class="check-badge"><i class="fas fa-check"></i></div><img src="${item.image}" class="item-image" onerror="this.src='https://via.placeholder.com/150'"><div style="font-size: 1.2rem; font-weight: 600;">${item.name}</div><div style="font-size: 1.1rem; color: var(--primary); font-weight: 700;">$${item.price}</div></div>`;
+                });
+            });
+            showScreen('screen-store', storeId);
+        }
+
+        function toggleCart(storeId, itemId) {
+            let targetItem = null;
+            appData.stores[storeId].groups.forEach(g => { const found = g.items.find(i => i.id === itemId); if(found) targetItem = found; });
+            let totalOthers = 0; for (let key in gameState.cart) { if (key !== storeId) totalOthers += gameState.cart[key].price; }
+            if (totalOthers + targetItem.price > gameState.wallet) { alert("Insufficient funds."); return; }
+            if (gameState.cart[storeId] && gameState.cart[storeId].id === itemId) delete gameState.cart[storeId];
+            else gameState.cart[storeId] = targetItem;
+            updateUI(); openStore(storeId);
+        }
+
+        // --- SCANNING ---
+        function goToScanner() {
+            showScreen('screen-scanner'); renderChecklist();
+            if (!html5QrcodeScanner) {
+                html5QrcodeScanner = new Html5Qrcode("reader");
+                html5QrcodeScanner.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 250, height: 250 } }, t => {
+                    for (let storeId in gameState.cart) {
+                        if (gameState.cart[storeId].id === t && !gameState.scannedItems.includes(t)) {
+                            gameState.scannedItems.push(t); document.getElementById('beep-sound').play().catch(e=>{}); renderChecklist(); break;
+                        }
+                    }
+                }).catch(e=>console.log(e));
+            }
+        }
+
+        function renderChecklist() {
+            const container = document.getElementById('checklist'); container.innerHTML = '';
+            let allScanned = true;
+            for (let storeId in gameState.cart) {
+                const item = gameState.cart[storeId]; const isScanned = gameState.scannedItems.includes(item.id);
+                if (!isScanned) allScanned = false;
+                container.innerHTML += `<div class="glass-panel" style="padding:15px; margin-bottom:10px; display:flex; align-items:center; gap:15px; ${isScanned ? 'border-color:var(--success); background:rgba(52,199,89,0.1);' : ''}"><img src="${item.image}" style="width:50px; height:50px; border-radius:8px; object-fit:cover;"><div style="flex-grow:1;"><div style="font-weight:bold;">${item.name}</div><div style="font-size:0.8rem;color:#666;">ID: ${item.id}</div></div>${isScanned ? '<i class="fas fa-check-circle" style="color:var(--success); font-size:1.5rem;"></i>' : '<i class="fas fa-spinner fa-spin" style="color:#aaa;"></i>'}</div>`;
+            }
+            document.getElementById('btn-go-cashier').style.display = allScanned ? 'flex' : 'none';
+        }
+
+        function goToCashier() {
+            if (html5QrcodeScanner) { html5QrcodeScanner.stop().then(()=>{html5QrcodeScanner.clear()}); html5QrcodeScanner = null; }
+            showScreen('screen-cashier');
+            if (!cashierScanner) {
+                cashierScanner = new Html5Qrcode("cashier-reader");
+                cashierScanner.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 250, height: 250 } }, t => {
+                    if (t === appData.appInfo.cashierQR) {
+                        cashierScanner.stop(); document.getElementById('beep-sound').play().catch(e=>{});
+                        document.getElementById('cashier-scanner-ui').style.display = 'none';
+                        document.getElementById('success-message').style.display = 'block';
+                        let total = Object.values(gameState.cart).reduce((s, i) => s + i.price, 0);
+                        document.getElementById('money-saved').innerText = (gameState.wallet - total).toFixed(2);
+                        confetti({ particleCount: 150, spread: 100, origin: { y: 0.6 } });
+                    }
+                }).catch(e=>console.log(e));
+            }
+        }
+
+        // --- CMS DASHBOARD LOGIC ---
+        function promptPassword() {
+            if (prompt("Enter Teacher Password:") === "shpsev") {
+                hydrateDashboard(); document.getElementById('settings-modal').style.display = 'block';
+            } else alert("Incorrect Password.");
+        }
+
+        function closeSettings() {
+            localStorage.setItem('shoppingConfig', JSON.stringify(appData));
+            document.getElementById('settings-modal').style.display = 'none'; applyConfig();
+        }
+
+        function switchDashTab(tabId) {
+            document.querySelectorAll('.dash-tab').forEach(t => t.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+            document.querySelectorAll('.dash-section').forEach(s => s.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+        }
+
+        // --- CMS: RENDERING BUILDERS ---
+        function hydrateDashboard() {
+            document.getElementById('inp-title').value = appData.appInfo.title;
+            document.getElementById('inp-subtitle').value = appData.appInfo.subtitle;
+            document.getElementById('inp-font').value = appData.ui.fontFamily;
+            document.getElementById('inp-size').value = appData.ui.fontSize;
+            document.getElementById('inp-bg-home').value = appData.backgrounds.home;
+            document.getElementById('inp-bg-quiz').value = appData.backgrounds.quiz;
+            document.getElementById('inp-bg-mall').value = appData.backgrounds.mall;
+            document.getElementById('inp-bg-grocery').value = appData.stores.grocery.background || '';
+            document.getElementById('inp-bg-clothes').value = appData.stores.clothes.background || '';
+            document.getElementById('inp-bg-souvenirs').value = appData.stores.souvenirs.background || '';
+            document.getElementById('inp-cashier-qr').value = appData.appInfo.cashierQR;
+            
+            renderQuizEditor();
+            renderStoreEditor('grocery'); renderStoreEditor('clothes'); renderStoreEditor('souvenirs');
+        }
+
+        // CMS: Quiz Editor
+        function renderQuizEditor() {
+            const list = document.getElementById('quiz-editor-list'); list.innerHTML = '';
+            appData.quiz.forEach((q, i) => {
+                list.innerHTML += `
+                <div class="editor-box">
+                    <button class="btn-small btn-remove" onclick="removeQuestion(${i})">Delete</button>
+                    <div class="form-group"><label>Question ${i+1}</label><input type="text" class="dash-input" value="${q.question}" onchange="appData.quiz[${i}].question = this.value"></div>
+                    <div class="dash-row">
+                        <div class="form-group"><label>Options (comma separated)</label><input type="text" class="dash-input" value="${q.options.join(',')}" onchange="appData.quiz[${i}].options = this.value.split(',')"></div>
+                        <div class="form-group"><label>Correct Answer (1st is 0, 2nd is 1...)</label><input type="number" class="dash-input" value="${q.correctIndex}" onchange="appData.quiz[${i}].correctIndex = parseInt(this.value)"></div>
+                        <div class="form-group"><label>Money Reward</label><input type="number" class="dash-input" value="${q.reward}" onchange="appData.quiz[${i}].reward = parseInt(this.value)"></div>
+                    </div>
+                </div>`;
+            });
+        }
+        function addQuestion() { appData.quiz.push({ question: "New Question?", options: ["A", "B"], correctIndex: 0, reward: 10 }); renderQuizEditor(); }
+        function removeQuestion(index) { appData.quiz.splice(index, 1); renderQuizEditor(); }
+
+        // CMS: Store Editor
+        function renderStoreEditor(storeId) {
+            const list = document.getElementById(`${storeId}-editor-list`); list.innerHTML = '';
+            appData.stores[storeId].groups.forEach((group, gIndex) => {
+                let html = `<div class="group-container">
+                    <div class="dash-row" style="align-items:center; margin-bottom:15px;">
+                        <div class="form-group" style="flex-grow:1; margin:0;"><label>Category Name</label><input type="text" class="dash-input" value="${group.groupName}" onchange="appData.stores['${storeId}'].groups[${gIndex}].groupName = this.value"></div>
+                        <button class="btn-small btn-danger" onclick="removeGroup('${storeId}', ${gIndex})">Delete Category</button>
+                    </div>`;
+                
+                group.items.forEach((item, iIndex) => {
+                    html += `
+                    <div class="editor-box">
+                        <button class="btn-small btn-remove" onclick="removeItem('${storeId}', ${gIndex}, ${iIndex})">X Remove Item</button>
+                        <div class="dash-row">
+                            <div class="form-group"><label>Item Name</label><input type="text" class="dash-input" value="${item.name}" onchange="appData.stores['${storeId}'].groups[${gIndex}].items[${iIndex}].name = this.value"></div>
+                            <div class="form-group"><label>Price ($)</label><input type="number" class="dash-input" value="${item.price}" onchange="appData.stores['${storeId}'].groups[${gIndex}].items[${iIndex}].price = parseInt(this.value)"></div>
+                        </div>
+                        <div class="dash-row">
+                            <div class="form-group"><label>Image Link (URL)</label><input type="text" class="dash-input" value="${item.image}" onchange="appData.stores['${storeId}'].groups[${gIndex}].items[${iIndex}].image = this.value"></div>
+                            <div class="form-group"><label>QR Code Text (What iPad scans)</label><input type="text" class="dash-input" value="${item.id}" onchange="appData.stores['${storeId}'].groups[${gIndex}].items[${iIndex}].id = this.value"></div>
+                        </div>
+                    </div>`;
+                });
+                html += `<div class="btn-add" style="background:#fff; border-color:#ccc; color:#555;" onclick="addItem('${storeId}', ${gIndex})">+ Add Item to ${group.groupName}</div></div>`;
+                list.innerHTML += html;
+            });
+        }
+        
+        function addGroup(storeId) { appData.stores[storeId].groups.push({ groupName: "New Category", items: [] }); renderStoreEditor(storeId); }
+        function removeGroup(storeId, gIndex) { if(confirm("Delete this entire category?")) { appData.stores[storeId].groups.splice(gIndex, 1); renderStoreEditor(storeId); } }
+        function addItem(storeId, gIndex) { appData.stores[storeId].groups[gIndex].items.push({ id: "qr_new", name: "New Item", price: 5, image: "" }); renderStoreEditor(storeId); }
+        function removeItem(storeId, gIndex, iIndex) { appData.stores[storeId].groups[gIndex].items.splice(iIndex, 1); renderStoreEditor(storeId); }
+
+        function exportJSON() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(appData, null, 4));
+            const dl = document.createElement('a'); dl.setAttribute("href", dataStr); dl.setAttribute("download", "shopping.json");
+            document.body.appendChild(dl); dl.click(); dl.remove();
+        }
+
+        function importJSON(event) {
+            const file = event.target.files[0]; if (!file) return;
+            const reader = new FileReader();
+            reader.onload = e => { try { appData = JSON.parse(e.target.result); hydrateDashboard(); alert("Successfully Loaded!"); } catch (err) { alert("Error reading file."); } };
+            reader.readAsText(file);
+        }
+
+        window.onload = initApp;
+    </script>
+</body>
+</html>
